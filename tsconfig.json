@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "moduleResolution": "NodeNext",
+    "module": "NodeNext",
+    "target": "esnext",
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "strict": true,
+    "strictPropertyInitialization": false
+  }
+}
