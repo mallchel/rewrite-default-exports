@@ -5,15 +5,18 @@ import { run as jscodeshiftRun } from 'jscodeshift/src/Runner';
 // @ts-expect-error
 import tsOptions from 'jscodeshift/parser/tsOptions';
 import { debugLog, readFrom, writeTo } from './utils';
-import { writeFileSync } from 'node:fs';
 import type {
   DefaultImportsArr,
   ExportsNamesArr,
   PreservedDefaultExportsArr,
   ProxyExportsArr,
 } from './types';
-
-// ENTRY="./packages/app/client" EXTENSIONS=".js,.ts,.tsx,.jsx" yarn replace-watch
+import {
+  defaultImportsFileName,
+  exportsNamesFileName,
+  preservedDefaultExportsFileName,
+  proxyExportsFileName,
+} from './const';
 
 // TODO: patch, waiting for babel-parser 8 with default true for this option
 tsOptions.createImportExpressions = true;
@@ -24,12 +27,6 @@ const gatherInfoPath = resolve('./gatherInfo', {
 const transformPath = resolve('./transform', {
   extensions: ['.ts'],
 });
-
-// TODO: move to const
-const defaultImportsFileName = 'dump/defaultImports.json';
-const proxyExportsFileName = 'dump/proxyExports.json';
-const exportsNamesFileName = 'dump/exportsNames.json';
-const preservedDefaultExportsFileName = 'dump/preservedDefaultExports.json';
 
 const { ENTRY, EXTENSIONS = '.js,.jsx,.ts,.tsx' } = process.env;
 const extensions = EXTENSIONS.split(',');
@@ -131,8 +128,12 @@ export const runTransform = async () => {
   );
 };
 
-// runGatherInfo();
+if (process.env.IS_GATHER_INFO) {
+  runGatherInfo();
+}
 
-runTransform();
+if (process.env.IS_TRANSFORM) {
+  runTransform();
+}
 
 // TODO: write script to transform other directories with only known default exports

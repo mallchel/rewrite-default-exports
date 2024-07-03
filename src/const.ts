@@ -64,3 +64,8 @@ export const reservedWords = [
   'with',
   'yield',
 ];
+
+export const defaultImportsFileName = 'dump/defaultImports.json';
+export const proxyExportsFileName = 'dump/proxyExports.json';
+export const exportsNamesFileName = 'dump/exportsNames.json';
+export const preservedDefaultExportsFileName = 'dump/preservedDefaultExports.json';

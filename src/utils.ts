@@ -27,12 +27,6 @@ export const getIsAcceptableModule = ({ filename }: { filename?: string }) => {
   return filename ? !/node_modules/.test(filename) : false;
 };
 
-// export const ensureArrExistence = (map: ConnectionIdsByFileName, key: string) => {
-//   if (!map.has(key)) {
-//     map.set(key, []);
-//   }
-// };
-
 export const ensureSetExistence = (map: Map<string, Set<string>>, key: string) => {
   if (!map.has(key)) {
     map.set(key, new Set());
@@ -44,22 +38,6 @@ export const ensureMapExistence = (map: Map<string, Map<unknown, unknown>>, key:
     map.set(key, new Map());
   }
 };
-
-// export const ensureObjExistence = (map: Map<string, object>, key: string, value: object = {}) => {
-//   if (!map.has(key)) {
-//     map.set(key, value);
-//   }
-// };
-
-// export const createArray = (obj: Record<string, unknown>, key: string) => {
-//   if (!obj[key]) {
-//     obj[key] = [];
-//   }
-// };
-
-// export const excludePackagesPaths = (fileName = '', packagesPaths: RegExp) => {
-//   return fileName.replace(packagesPaths, '');
-// };
 
 export const capitalizeFirstLetter = (str: string) => {
   return str.charAt(0).toUpperCase() + str.slice(1);
