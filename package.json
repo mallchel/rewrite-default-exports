@@ -9,14 +9,16 @@
   "files": [
     "lib"
   ],
-  "bin": "./lib/cli.js",
+  "bin": {
+    "rewrite-default-exports": "lib/cli.js"
+  },
   "license": "GPL-3.0-only",
   "homepage": "https://github.com/mallchel/rewrite-default-exports",
   "author": "sebastianalfabc@gmail.com",
   "description": "Rewrite your default exports to named ones and replace old names everywhere",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mallchel/rewrite-default-exports"
+    "url": "git+https://github.com/mallchel/rewrite-default-exports.git"
   },
   "workspaces": {
     "packages": [
