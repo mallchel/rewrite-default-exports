@@ -3,7 +3,8 @@
   "version": "1.0.5",
   "main": "lib/makePlugins.js",
   "keywords": [
-    "rewrite-default-exports"
+    "rewrite-default-exports",
+    "codemod"
   ],
   "files": [
     "lib"
@@ -14,7 +15,7 @@
   "license": "GPL-3.0-only",
   "homepage": "https://github.com/mallchel/rewrite-default-exports",
   "author": "sebastianalfabc@gmail.com",
-  "description": "Rewrite your default exports to named ones and replace old names everywhere",
+  "description": "Codemod to rewrite your default exports to named ones and replace old names everywhere",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mallchel/rewrite-default-exports.git"
