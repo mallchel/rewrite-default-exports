@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://www.npmjs.com/package/rewrite-default-exports"><img src="https://img.shields.io/npm/v/rewrite-default-exports?style=flat-square"></a>
+  <a href="https://www.npmjs.com/package/rewrite-default-exports"><img src="https://img.shields.io/npm/dm/rewrite-default-exports?style=flat-square"></a>
+  <a href="https://www.npmjs.com/package/rewrite-default-exports"><img src="https://img.shields.io/github/stars/mallchel/rewrite-default-exports?style=flat-square"></a>
+</p>
+
 ## Motivation
 One day you might think about using named import and named export instead of default import and default export because it is a well-known best practice.
 
