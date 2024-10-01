@@ -22,8 +22,8 @@
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "yarn",
-      // "args": ["test-watch", "src/__tests__/transform-test.ts"],
-      "args": ["test-watch", "src/__tests__/gatherInfo-test.ts"],
+      "args": ["test-watch", "src/__tests__/transform-test.ts"],
+      // "args": ["test-watch", "src/__tests__/gatherInfo-test.ts"],
       "cwd": "${workspaceRoot}",
       "console": "integratedTerminal",
       "env": {

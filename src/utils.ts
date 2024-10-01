@@ -1,21 +1,29 @@
-// import { ConnectionIdsByFileName } from './types';
-import type {
-  ASTNode,
-  ASTPath,
-  Collection,
-  ExportDefaultDeclaration,
-  ExportNamedDeclaration,
-  ExportSpecifier,
-  ImportDeclaration,
-  ImportSpecifier,
-  JSCodeshift,
+import j, {
+  type ASTPath,
+  type Collection,
+  type ExportDefaultDeclaration,
+  type ExportNamedDeclaration,
+  type ExportSpecifier,
+  type ImportSpecifier,
+  type JSCodeshift,
 } from 'jscodeshift';
-import { reservedWords } from './const';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { Type } from 'ast-types/lib/types';
+import { reservedWords, visitedFilePaths } from './const';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 // @ts-expect-error
 import resolveSyncLib from 'resolve/sync';
-import type { AnyFunction, DefaultImports, LocalImportPathsByName, NamedTypesValue } from './types';
+import type {
+  AnyFunction,
+  DefaultImports,
+  ExportsNames,
+  IterateByPathsArgs,
+  LocalDefaultImports,
+  LocalImportPathsByName,
+  NamedTypesValue,
+  ProxyDefaultExports,
+  Specifier,
+} from './types';
 
 export const debugLog = (...args: any[]) => {
   if (process.env.DEBUG_APP) {
@@ -23,8 +31,18 @@ export const debugLog = (...args: any[]) => {
   }
 };
 
-export const getIsAcceptableModule = ({ filename }: { filename?: string }) => {
-  return filename ? !/node_modules/.test(filename) : false;
+export const getIsAcceptableModule = ({
+  filename,
+  extensions,
+}: {
+  filename?: string;
+  extensions: string[];
+}) => {
+  return (
+    filename &&
+    !/node_modules/.exec(filename) &&
+    extensions.includes('.' + filename.split('.').at(-1)!)
+  );
 };
 
 export const ensureSetExistence = (map: Map<string, Set<string>>, key: string) => {
@@ -43,7 +61,7 @@ export const capitalizeFirstLetter = (str: string) => {
   return str.charAt(0).toUpperCase() + str.slice(1);
 };
 
-export const generateNamedExport = ({ filePath }: { filePath: string }) => {
+export const generateNewExportName = ({ filePath }: { filePath: string }) => {
   // jsx,tsx has indirect sign that it exported by default component
   const hasJsx = ['jsx', 'tsx'].includes(filePath.split('.').slice(-1)[0]);
   let fileName =
@@ -56,7 +74,10 @@ export const generateNamedExport = ({ filePath }: { filePath: string }) => {
 
   if (fileName === 'index') {
     fileName = filePath.split('/').slice(-2)[0];
+    fileName = fileName[0].toLocaleLowerCase() + fileName.slice(1);
   }
+
+  fileName = fileName.replaceAll('-', '');
 
   if (hasJsx) {
     return capitalizeFirstLetter(fileName);
@@ -72,6 +93,9 @@ export const generateNamedExport = ({ filePath }: { filePath: string }) => {
 export const writeTo = ({ fileName, data }: { fileName: string; data: unknown }) => {
   const fullPath = resolve('src', fileName);
   debugLog('writeTo', fullPath);
+
+  const passedPath = dirname(resolve(fullPath));
+  mkdirSync(passedPath, { recursive: true });
 
   writeFileSync(
     fullPath,
@@ -129,7 +153,7 @@ export const getClosest = ({
 }: {
   path: ASTPath;
   type?: NamedTypesValue;
-  matchNode: (v: ASTNode) => boolean;
+  matchNode: (v: unknown) => boolean;
 }) => {
   let parent = path.parent;
   let prevPath = path;
@@ -168,6 +192,14 @@ export const compose =
   <D>(doSomething?: D) =>
     fns.reduceRight((y, f) => f(y), doSomething);
 
+export const map =
+  <T extends AnyFunction>(f: T) =>
+  <S extends AnyFunction>(step: S) =>
+  <A, C>(a: A, c: C) => {
+    const result = f(a, c);
+
+    return step?.(a, result);
+  };
 export const tap =
   <T extends AnyFunction>(f: T) =>
   <S extends AnyFunction>(step: S) =>
@@ -190,6 +222,30 @@ export const getIsImportedDefaultSpecifier = ({ local }: ExportSpecifier) => {
   return local?.name === 'default';
 };
 
+const iterateBy = ({
+  callbacks,
+  collection,
+  j,
+  declaration,
+  predicate,
+}: {
+  callbacks: Array<(p: ASTPath<ExportNamedDeclaration>) => void>;
+  collection: Collection;
+  j: JSCodeshift;
+  declaration: Type<ExportNamedDeclaration>;
+  predicate: (specifier: ExportSpecifier) => boolean;
+}) => {
+  const targetCollection = collection.find(declaration).filter((p) => {
+    return Boolean(p.value.specifiers?.find(predicate));
+  });
+
+  targetCollection.forEach((item) => {
+    callbacks.forEach((callback) => {
+      callback(item);
+    });
+  });
+};
+
 export const iterateByExportImportDefaultInNamedDeclaration = ({
   callbacks,
   collection,
@@ -199,22 +255,14 @@ export const iterateByExportImportDefaultInNamedDeclaration = ({
   collection: Collection;
   j: JSCodeshift;
 }) => {
-  const exportedOrImportedDefaultSpecifier = collection
-    .find(j.ExportNamedDeclaration)
-    .filter((p) => {
-      return Boolean(
-        p.value.specifiers?.find((specifier) => {
-          return (
-            getIsExportedDefaultSpecifier(specifier) || getIsImportedDefaultSpecifier(specifier)
-          );
-        }),
-      );
-    });
-
-  exportedOrImportedDefaultSpecifier.forEach((item) => {
-    callbacks.forEach((callback) => {
-      callback(item);
-    });
+  iterateBy({
+    callbacks,
+    j,
+    collection,
+    declaration: j.ExportNamedDeclaration,
+    predicate: (specifier) => {
+      return getIsExportedDefaultSpecifier(specifier) || getIsImportedDefaultSpecifier(specifier);
+    },
   });
 };
 
@@ -225,7 +273,7 @@ export const iterateByExportDefaultDeclaration = ({
 }: {
   callbacks: Array<
     | ((
-        p: ASTPath<ExportDefaultDeclaration>,
+        args: { path: ASTPath<ExportDefaultDeclaration> },
         exportDefaultDeclaration: Collection<ExportDefaultDeclaration>,
       ) => void)
     | undefined
@@ -235,89 +283,213 @@ export const iterateByExportDefaultDeclaration = ({
 }) => {
   const exportDefaultDeclaration = collection.find(j.ExportDefaultDeclaration);
 
-  exportDefaultDeclaration.forEach((item) => {
+  exportDefaultDeclaration.forEach((path) => {
     callbacks.forEach((callback) => {
-      callback?.(item, exportDefaultDeclaration);
+      callback?.({ path }, exportDefaultDeclaration);
     });
   });
 };
 
-export const getImportedSpecifierName = ({
-  collection,
-  localSpecifierName,
-  j,
+export const getFromLocalImportPathsByName = ({
+  specifier,
+  localImportPathsByName,
+  declarationName,
 }: {
-  collection: Collection;
-  localSpecifierName: string;
-  j: JSCodeshift;
+  specifier?: Specifier;
+  localImportPathsByName: LocalImportPathsByName;
+  declarationName?: string;
 }) => {
-  const importDeclarations = collection.find(j.ImportDeclaration).nodes();
-
-  let targetSpecifier: ImportSpecifier | undefined;
-  importDeclarations.find((importDeclaration) => {
-    console.log('! importDeclaration', importDeclaration.source.value);
-
-    const specifier = importDeclaration.specifiers?.find((specifier) => {
-      return specifier.local?.name === localSpecifierName;
-    }) as ImportSpecifier;
-
-    targetSpecifier = specifier;
-
-    return specifier;
-  });
-
-  if (j.ImportDefaultSpecifier.check(targetSpecifier)) {
-    throw new Error('You call getImportedSpecifierName for ImportDefaultSpecifier');
-  }
-
-  if (!targetSpecifier) {
-    console.error('targetSpecifier is undefined');
-  }
-
-  return targetSpecifier!.imported.name;
+  return localImportPathsByName.get(declarationName ?? specifier!.local!.name);
 };
 
-export const gatherLocalImportsDefaultImports = ({
-  path,
-  filePath,
-  defaultImports,
-  _extensions,
+const setToLocalImportPathsByName = ({
+  specifier,
+  importFullPath,
   localImportPathsByName,
-  j,
 }: {
-  path: ASTPath<ImportDeclaration> | ASTPath<ExportNamedDeclaration>;
-  filePath: string;
-  defaultImports: DefaultImports;
-  _extensions: string[];
+  specifier: Specifier;
+  importFullPath: string;
   localImportPathsByName: LocalImportPathsByName;
-  j: JSCodeshift;
 }) => {
-  // source might be undefined for the ExportNamedDeclaration
-  // ex: export { Test };
-  if (!path.value.source) {
+  if (specifier.local) {
+    localImportPathsByName.set(
+      specifier.local.name === 'default' && j.ExportSpecifier.check(specifier)
+        ? specifier.exported.name
+        : specifier.local.name,
+      importFullPath,
+    );
+  }
+};
+
+export const gatherLocalImportPaths = ({
+  localImportPathsByName,
+  specifier,
+  importFullPath,
+}: {
+  localImportPathsByName: LocalImportPathsByName;
+  specifier: Specifier;
+  importFullPath?: string;
+}) => {
+  if (!importFullPath) {
     return;
   }
 
-  const valueSource = path.value.source;
+  setToLocalImportPathsByName({ specifier, importFullPath, localImportPathsByName });
+};
 
-  path.value.specifiers?.forEach((specifier) => {
+export const gatherDefaultImports = ({
+  filePath,
+  defaultImports,
+  specifier,
+  importFullPath,
+  j,
+  localDefaultImports,
+}: {
+  filePath: string;
+  defaultImports: DefaultImports;
+  specifier: Specifier;
+  importFullPath: string;
+  j: JSCodeshift;
+  localDefaultImports: LocalDefaultImports;
+}) => {
+  if (
+    j.ImportDefaultSpecifier.check(specifier) ||
+    (j.ExportSpecifier.check(specifier) && specifier.local?.name === 'default')
+  ) {
+    ensureSetExistence(defaultImports, filePath);
+    defaultImports.get(filePath)!.add(importFullPath);
+    localDefaultImports.set(specifier.local!.name, specifier);
+  }
+};
+
+export const gatherDefaultExports = ({
+  filePath,
+  defaultImports,
+  specifier,
+  importFullPath,
+  j,
+}: {
+  filePath: string;
+  defaultImports: DefaultImports;
+  specifier: Specifier;
+  importFullPath: string;
+  j: JSCodeshift;
+}) => {
+  if (j.ExportSpecifier.check(specifier) && specifier.exported.name === 'default') {
+  }
+};
+
+export const getFinalFilePaths = ({
+  targetFilePath,
+  proxyDefaultExports,
+}: {
+  targetFilePath: string;
+  proxyDefaultExports: ProxyDefaultExports;
+}) => {
+  const isProxyFile = proxyDefaultExports.has(targetFilePath);
+  let resolvedFilePath: string = isProxyFile
+    ? proxyDefaultExports.get(targetFilePath)!
+    : targetFilePath;
+
+  while (isProxyFile && resolvedFilePath && proxyDefaultExports.has(resolvedFilePath)) {
+    resolvedFilePath = proxyDefaultExports.get(resolvedFilePath)!;
+  }
+
+  return resolvedFilePath;
+};
+
+export const convertFromJsonToMapSet = (arr: Array<[string, string[]]>) => {
+  return new Map(arr.map((item) => [item[0], new Set(item[1])]));
+};
+
+export const makeIterateBySourcesNSpecifiers = compose(
+  map(({ path, filePath, _extensions }) => {
+    // source might be undefined for the ExportNamedDeclaration
+    // ex: export { Test };
+    if (!path.value.source) {
+      return {
+        importFullPath: undefined,
+      };
+    }
+
+    // take importFullPath
+    const valueSource = path.value.source;
+
     const importFullPath = getFullPathFromRelative({
       relativePath: valueSource.value as string,
       currentFilePath: filePath,
       extensions: _extensions,
     });
 
-    if (!getIsAcceptableModule({ filename: importFullPath })) {
-      return;
-    }
+    return {
+      importFullPath,
+    };
+  }),
+  filter(({ _extensions }, { importFullPath }) => {
+    return getIsAcceptableModule({ filename: importFullPath, extensions: _extensions });
+  }),
+  tap(({ iterateByPaths, path }) => {
+    iterateByPaths?.forEach((iterateBySource: IterateByPathsArgs) => {
+      iterateBySource({ path });
+    });
+  }),
+  map(({ path }, { importFullPath }) => {
+    return { specifiers: path.value.specifiers, importFullPath };
+  }),
+  tap(
+    (
+      {
+        path,
+        filePath,
+        iterateBySpecifiers,
+        j,
+        defaultImports,
+        localImportPathsByName,
+        exportsNames,
+        proxyDefaultExports,
+        localDefaultImports,
+      },
+      { specifiers, importFullPath },
+    ) => {
+      if (!iterateBySpecifiers) {
+        return;
+      }
 
-    if (specifier.local) {
-      localImportPathsByName.set(specifier.local.name, importFullPath);
-    }
+      specifiers.forEach((specifier: Specifier) => {
+        iterateBySpecifiers?.forEach(
+          (
+            iterateBySpecifier: (args: {
+              filePath: string;
+              defaultImports: DefaultImports;
+              localDefaultImports: LocalDefaultImports;
+              localImportPathsByName: LocalImportPathsByName;
+              specifier: Specifier;
+              importFullPath: string;
+              j: JSCodeshift;
+              exportsNames: ExportsNames;
+              path: ASTPath<unknown>;
+              proxyDefaultExports: ProxyDefaultExports;
+            }) => void,
+          ) => {
+            iterateBySpecifier({
+              j,
+              filePath,
+              defaultImports,
+              localImportPathsByName,
+              specifier,
+              importFullPath,
+              exportsNames,
+              path,
+              proxyDefaultExports,
+              localDefaultImports,
+            });
+          },
+        );
+      });
+    },
+  ),
+);
 
-    if (j.ImportDefaultSpecifier.check(specifier)) {
-      ensureSetExistence(defaultImports, filePath);
-      defaultImports.get(filePath)!.add(importFullPath);
-    }
-  });
+export const getIsVisitedPath = (filePath: string) => {
+  return visitedFilePaths.has(filePath);
 };

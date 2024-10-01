@@ -9,7 +9,7 @@ import type {
   DefaultImportsArr,
   ExportsNamesArr,
   PreservedDefaultExportsArr,
-  ProxyExportsArr,
+  ProxyDefaultExportsArr,
 } from './types';
 import {
   defaultImportsFileName,
@@ -22,10 +22,10 @@ import {
 tsOptions.createImportExpressions = true;
 
 const gatherInfoPath = resolve('./gatherInfo', {
-  extensions: ['.ts'],
+  extensions: ['.ts', '.js'],
 });
 const transformPath = resolve('./transform', {
-  extensions: ['.ts'],
+  extensions: ['.ts', '.js'],
 });
 
 const { ENTRY, EXTENSIONS = '.js,.jsx,.ts,.tsx' } = process.env;
@@ -53,7 +53,7 @@ export const runGatherInfo = async () => {
   const preservedDefaultExports = new Set<string>();
   // data set 4
   // current file -> to file
-  const proxyExports = new Map<string, string>();
+  const proxyDefaultExports = new Map<string, string>();
 
   await jscodeshiftRun(gatherInfoPath, [entryFile], {
     print: true,
@@ -64,7 +64,7 @@ export const runGatherInfo = async () => {
     defaultImports,
     exportsNames,
     preservedDefaultExports,
-    proxyExports,
+    proxyDefaultExports,
     _extensions: extensions,
     parser: 'tsx',
   });
@@ -72,7 +72,7 @@ export const runGatherInfo = async () => {
   debugLog('before transform', {
     preservedDefaultExports,
     defaultImports,
-    proxyExports,
+    proxyDefaultExports,
     exportsNames,
   });
 
@@ -80,7 +80,7 @@ export const runGatherInfo = async () => {
     fileName: defaultImportsFileName,
     data: defaultImports,
   });
-  writeTo({ fileName: proxyExportsFileName, data: proxyExports });
+  writeTo({ fileName: proxyExportsFileName, data: proxyDefaultExports });
   writeTo({ fileName: exportsNamesFileName, data: exportsNames });
   writeTo({
     fileName: preservedDefaultExportsFileName,
@@ -94,7 +94,7 @@ export const runTransform = async () => {
   const preservedDefaultExportsArr: PreservedDefaultExportsArr = readFrom({
     fileName: preservedDefaultExportsFileName,
   });
-  const proxyExportsArr: ProxyExportsArr = readFrom({
+  const proxyDefaultExportsArr: ProxyDefaultExportsArr = readFrom({
     fileName: proxyExportsFileName,
   });
 
@@ -110,9 +110,10 @@ export const runTransform = async () => {
     exportsNamesArr,
     preservedDefaultExportsArr,
     defaultImportsArr,
-    proxyExportsArr,
+    proxyDefaultExportsArr,
     _extensions: extensions,
     parser: 'tsx',
+    dry: false,
   };
 
   await jscodeshiftRun(
@@ -121,7 +122,7 @@ export const runTransform = async () => {
       ...new Set([
         ...exportsNamesArr.map(([filename]) => filename).flat(),
         ...defaultImportsArr.map((item) => item[0]),
-        ...proxyExportsArr.map((item) => item[0]),
+        ...proxyDefaultExportsArr.map((item) => item[0]),
       ]),
     ],
     jsCodeShiftOptions,
@@ -136,4 +137,4 @@ if (process.env.IS_TRANSFORM) {
   runTransform();
 }
 
-// TODO: write script to transform other directories with only known default exports
+// TODO: write script to transform other directories with already known default exports

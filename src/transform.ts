@@ -1,14 +1,17 @@
-import type { API, Collection, Identifier, JSCodeshift } from 'jscodeshift';
+import type { API, ASTNode, Collection, Identifier, JSCodeshift, Literal } from 'jscodeshift';
 import { ExpressionKind } from 'ast-types/gen/kinds';
 
 import {
   debugLog,
   getIsExportedDefaultSpecifier,
   getFullPathFromRelative,
-  getImportedSpecifierName,
   iterateByExportImportDefaultInNamedDeclaration,
   iterateByExportDefaultDeclaration,
   getIsImportedDefaultSpecifier,
+  getFinalFilePaths,
+  convertFromJsonToMapSet,
+  getIsAcceptableModule,
+  getClosest,
 } from './utils';
 import type {
   DefaultImports,
@@ -16,8 +19,8 @@ import type {
   ExportsNames,
   ExportsNamesArr,
   PreservedDefaultExports,
-  ProxyExports,
-  ProxyExportsArr,
+  ProxyDefaultExports,
+  ProxyDefaultExportsArr,
 } from './types';
 
 export const transformExport = ({
@@ -26,16 +29,24 @@ export const transformExport = ({
   preservedDefaultExports,
   exportsNames,
   filePath,
-  proxyExports,
+  proxyDefaultExports,
+  defaultImports,
+  _extensions,
 }: {
   collection: Collection;
   j: JSCodeshift;
   exportsNames: ExportsNames;
-  proxyExports: ProxyExports;
+  proxyDefaultExports: ProxyDefaultExports;
   preservedDefaultExports: PreservedDefaultExports;
   filePath: string;
+  defaultImports: DefaultImports;
+  _extensions: string[];
 }) => {
-  if (!proxyExports.has(filePath) && !exportsNames.has(filePath)) {
+  if (
+    !proxyDefaultExports.has(filePath) &&
+    !exportsNames.has(filePath) &&
+    !defaultImports.has(filePath)
+  ) {
     return;
   }
 
@@ -43,17 +54,13 @@ export const transformExport = ({
 
   /**
    * @note
-   * filePath is might me a proxy file here, so resolve the original filePath via proxyExports
+   * filePath is might me a proxy file here, so resolve the original filePath via proxyDefaultExports
    */
 
-  const isProxyFile = proxyExports.has(filePath);
-  let resolvedFilePath: string = isProxyFile ? proxyExports.get(filePath)! : filePath;
+  const finalFilePath = getFinalFilePaths({ targetFilePath: filePath, proxyDefaultExports });
+  const isProxyFile = proxyDefaultExports.has(filePath);
 
-  while (isProxyFile && resolvedFilePath && proxyExports.has(resolvedFilePath)) {
-    resolvedFilePath = proxyExports.get(resolvedFilePath)!;
-  }
-
-  let nameInsteadOfDefault = exportsNames.get(resolvedFilePath);
+  let nameInsteadOfDefault = exportsNames.get(finalFilePath);
   let shouldUpdateExportDefaultId = Boolean(nameInsteadOfDefault);
   let nameInsteadOfDefaultIdentifier = nameInsteadOfDefault
     ? j.identifier(nameInsteadOfDefault)
@@ -64,57 +71,72 @@ export const transformExport = ({
 
   iterateByExportDefaultDeclaration({
     callbacks: [
-      (p, exportDefaultDeclaration) => {
-        debugLog('iterateByExportDefaultDeclaration', p.value.declaration.type);
+      ({ path }, exportDefaultDeclaration) => {
+        debugLog('iterateByExportDefaultDeclaration', path.value.declaration.type);
+        // fallback to nameInsteadOfDefault in cases:
+        // export default 123;
+        // export default {...};
+        let localIdentifierName =
+          (path.value.declaration as Identifier).name ?? nameInsteadOfDefault;
+        let localIdentifierNameIdentifier = j.identifier(localIdentifierName);
 
         const getFinalNode = () => {
           // TODO: add test-case
           if (
-            j.FunctionDeclaration.check(p.value.declaration) ||
-            j.ClassDeclaration.check(p.value.declaration)
+            j.FunctionDeclaration.check(path.value.declaration) ||
+            j.ClassDeclaration.check(path.value.declaration)
           ) {
             return j.exportNamedDeclaration({
-              ...p.value.declaration,
-              ...(p.value.declaration.id ? undefined : { id: nameInsteadOfDefaultIdentifier }),
+              ...path.value.declaration,
+              ...(path.value.declaration.id ? undefined : { id: nameInsteadOfDefaultIdentifier }),
             });
           }
 
-          if (j.Identifier.check(p.value.declaration)) {
-            if (shouldUseImportSpecifier) {
-              const localSpecifierName = (p.value.declaration as Identifier).name;
-
-              nameInsteadOfDefault = getImportedSpecifierName({
-                j,
-                collection,
-                localSpecifierName,
-              });
-
-              nameInsteadOfDefaultIdentifier = j.identifier(nameInsteadOfDefault);
-
-              return j.exportNamedDeclaration(null, [
-                j.exportSpecifier.from({
-                  local: j.identifier(localSpecifierName),
-                  exported: nameInsteadOfDefaultIdentifier,
-                }),
-              ]);
-            }
-
+          if (j.Identifier.check(path.value.declaration)) {
             return j.exportNamedDeclaration(null, [
               j.exportSpecifier.from({
-                local: nameInsteadOfDefaultIdentifier,
+                local: localIdentifierNameIdentifier,
                 exported: nameInsteadOfDefaultIdentifier!,
               }),
             ]);
           }
 
+          const isIdentifierNameAlreadyUsed = !!getClosest({
+            path,
+            matchNode: (p) => {
+              const variableDeclarator = j(p as ASTNode)
+                .find(j.Identifier, { name: localIdentifierName })
+                .nodes()[0];
+
+              return Boolean(variableDeclarator);
+            },
+          });
+
+          if (isIdentifierNameAlreadyUsed) {
+            localIdentifierName += 'Alias';
+          }
+          localIdentifierNameIdentifier = j.identifier(localIdentifierName);
+
           const variableDeclaration = j.variableDeclaration('const', [
             j.variableDeclarator(
-              nameInsteadOfDefaultIdentifier!,
-              p.value.declaration as ExpressionKind,
+              localIdentifierNameIdentifier,
+              path.value.declaration as ExpressionKind,
             ),
           ]);
 
-          return j.exportNamedDeclaration(variableDeclaration);
+          if (localIdentifierNameIdentifier.name === nameInsteadOfDefaultIdentifier?.name) {
+            return j.exportNamedDeclaration(variableDeclaration);
+          }
+
+          return [
+            variableDeclaration,
+            j.exportNamedDeclaration(null, [
+              j.exportSpecifier.from({
+                local: localIdentifierNameIdentifier,
+                exported: nameInsteadOfDefaultIdentifier!,
+              }),
+            ]),
+          ];
         };
 
         const finalNode = getFinalNode();
@@ -122,11 +144,15 @@ export const transformExport = ({
         if (shouldPreserveExportDefault) {
           if (shouldUpdateExportDefaultId) {
             exportDefaultDeclaration.replaceWith(() => {
-              return j.exportDefaultDeclaration(nameInsteadOfDefaultIdentifier!);
+              return j.exportDefaultDeclaration(localIdentifierNameIdentifier!);
             });
           }
 
-          p.insertAfter(finalNode);
+          // before is needed for cases like:
+          // export default 123; ->
+          // export const NewName = 123;
+          // export default NewName;
+          path.insertBefore(...(Array.isArray(finalNode) ? finalNode : [finalNode]));
         } else {
           exportDefaultDeclaration.replaceWith(() => {
             return finalNode;
@@ -144,34 +170,59 @@ export const transformExport = ({
         let localSpecifierName;
         let localSpecifierNameIdentifier: Identifier | undefined = undefined;
 
-        if (!nameInsteadOfDefault) {
-          localSpecifierName = p.value.specifiers?.find(getIsExportedDefaultSpecifier)?.local
-            ?.name!;
+        // check default import
+        // Case for: `export { default as Test1 } from '../Test';`,
+        if (p.value.specifiers?.find(getIsImportedDefaultSpecifier)) {
+          const targetFilePath = getFullPathFromRelative({
+            relativePath: p.value.source!.value as string,
+            currentFilePath: filePath,
+            extensions: _extensions,
+          });
 
-          if (shouldUseImportSpecifier) {
-            nameInsteadOfDefault = getImportedSpecifierName({
-              j,
-              collection,
-              localSpecifierName,
-            });
-          }
-
-          if (!localSpecifierName) {
-            throw new Error(`There is no name localSpecifierName, filePath: ${filePath}`);
-          }
-
-          localSpecifierNameIdentifier = j.identifier(localSpecifierName);
+          nameInsteadOfDefault = exportsNames.get(targetFilePath);
           nameInsteadOfDefaultIdentifier = j.identifier(nameInsteadOfDefault!);
         }
 
-        let otherSpecifiers = p.value.specifiers ?? [];
+        // if (!nameInsteadOfDefault) {
+        localSpecifierName = p.value.specifiers?.find(getIsExportedDefaultSpecifier)?.local?.name!;
 
-        // remove export default
+        // case:
+        // export { default } from './Test'
+        // we should use newName instead of default
+        if (localSpecifierName === 'default') {
+          localSpecifierName = nameInsteadOfDefault;
+        }
+
+        // for case like:
+        // export { Test as default } from './Test'
+        // we need only remove as default
+        if (!nameInsteadOfDefault) {
+          nameInsteadOfDefault = localSpecifierName;
+        }
+
+        // case:
+        // export { default as Test1 } from './Test'
+        // replace to export { Test1 }
+        localSpecifierNameIdentifier = j.identifier(localSpecifierName ?? nameInsteadOfDefault!);
+        nameInsteadOfDefaultIdentifier = j.identifier(nameInsteadOfDefault!);
+
+        let otherSpecifiers = p.value.specifiers ?? [];
+        let oldNamedExportIdentifier: Identifier | undefined = undefined;
+
+        // remove export default and import default
         if (!shouldPreserveExportDefault || shouldUpdateExportDefaultId) {
           otherSpecifiers = otherSpecifiers.filter((specifier) => {
-            return (
-              !getIsExportedDefaultSpecifier(specifier) && !getIsImportedDefaultSpecifier(specifier)
-            );
+            const isAllowedToStay =
+              !getIsExportedDefaultSpecifier(specifier) &&
+              !getIsImportedDefaultSpecifier(specifier);
+
+            // we can have only one default import and only one export default in each file
+            // so we will filter only one specifier per each ExportNamedDeclaration
+            if (!isAllowedToStay && specifier.exported.name !== 'default') {
+              oldNamedExportIdentifier = j.identifier(specifier.exported.name);
+            }
+
+            return isAllowedToStay;
           });
         }
 
@@ -179,7 +230,7 @@ export const transformExport = ({
         if (shouldPreserveExportDefault && shouldUpdateExportDefaultId) {
           otherSpecifiers.push(
             j.exportSpecifier.from({
-              local: localSpecifierNameIdentifier ?? nameInsteadOfDefaultIdentifier,
+              local: localSpecifierNameIdentifier,
               exported: j.identifier('default'),
             }),
           );
@@ -193,8 +244,8 @@ export const transformExport = ({
              * import { Test as Test1 } from '...'
              * export { Test1 as Test };
              */
-            local: localSpecifierNameIdentifier ?? nameInsteadOfDefaultIdentifier,
-            exported: nameInsteadOfDefaultIdentifier!,
+            local: localSpecifierNameIdentifier,
+            exported: oldNamedExportIdentifier ?? nameInsteadOfDefaultIdentifier!,
           }),
         );
 
@@ -212,13 +263,15 @@ export const transformExport = ({
   });
 };
 
-export const transformImport = ({
+export const transformImportAndUsage = ({
   collection,
   j,
   exportsNames,
   filePath,
   defaultImports,
   _extensions,
+  proxyDefaultExports,
+  originalCollection,
 }: {
   collection: Collection;
   j: JSCodeshift;
@@ -226,6 +279,8 @@ export const transformImport = ({
   filePath: string;
   defaultImports: DefaultImports;
   _extensions: string[];
+  proxyDefaultExports: ProxyDefaultExports;
+  originalCollection: Collection;
 }) => {
   const defaultImportPaths = defaultImports.get(filePath);
 
@@ -233,24 +288,80 @@ export const transformImport = ({
     return;
   }
 
-  collection.find(j.ImportDefaultSpecifier).replaceWith((p) => {
-    // resolve real path without aliases, relative paths etc.
-    const targetFilepath = getFullPathFromRelative({
-      relativePath: p.parent.value.source.value as string,
-      currentFilePath: filePath,
-      extensions: _extensions,
+  const replaceIdentifiers = ({
+    nameInsteadOfDefaultIdentifier,
+    oldName,
+  }: {
+    nameInsteadOfDefaultIdentifier: Identifier;
+    oldName: string;
+  }) => {
+    collection.find(j.Identifier, { name: oldName }).forEach((p) => {
+      if (j.Property.check(p.parentPath.value)) {
+        if (p.parentPath.value.value === p.value) {
+          p.parentPath.replace({
+            ...p.parentPath.value,
+            value: nameInsteadOfDefaultIdentifier,
+          });
+        }
+
+        return;
+      }
+
+      if (
+        j.ExportSpecifier.check(p.parentPath.value) ||
+        j.ImportSpecifier.check(p.parentPath.value)
+      ) {
+        return;
+      }
+
+      p.replace(nameInsteadOfDefaultIdentifier);
     });
+  };
 
-    const nameInsteadOfDefault = exportsNames.get(targetFilepath);
+  const transformImportDefaultSpecifier = () => {
+    collection.find(j.ImportDefaultSpecifier).forEach((p) => {
+      // resolve real path without aliases, relative paths etc.
+      const targetFilepath = getFullPathFromRelative({
+        relativePath: p.parent.value.source.value as string,
+        currentFilePath: filePath,
+        extensions: _extensions,
+      });
 
-    if (!nameInsteadOfDefault) {
-      console.error('There is no "nameInsteadOfDefault" for targetFilepath: ', targetFilepath);
+      if (!getIsAcceptableModule({ filename: targetFilepath, extensions: _extensions })) {
+        return;
+      }
 
-      return p;
-    }
+      const finalFilePath = getFinalFilePaths({
+        targetFilePath: targetFilepath,
+        proxyDefaultExports,
+      });
 
-    return j.importSpecifier(j.identifier(nameInsteadOfDefault));
-  });
+      const nameInsteadOfDefault = exportsNames.get(finalFilePath);
+
+      if (!nameInsteadOfDefault) {
+        console.error('There is no "nameInsteadOfDefault" for finalFilePath: ', finalFilePath);
+
+        return;
+      }
+
+      const importedOldName = p.value.local!.name;
+      const nameInsteadOfDefaultIdentifier = j.identifier(nameInsteadOfDefault);
+      const importAliasIdentifier = j.identifier(importedOldName);
+
+      const newImportSpecifier = j.importSpecifier.from({
+        local: importAliasIdentifier,
+        imported: nameInsteadOfDefaultIdentifier,
+      });
+      p.replace(newImportSpecifier);
+
+      replaceIdentifiers({
+        oldName: importedOldName,
+        nameInsteadOfDefaultIdentifier: importAliasIdentifier,
+      });
+    });
+  };
+
+  transformImportDefaultSpecifier();
 };
 
 // const transformDefaultUsage = ({
@@ -265,7 +376,7 @@ export const transformImport = ({
 // const importNamespaceSpecifier = collection.find(j.ImportNamespaceSpecifier).get();
 // importNamespaceSpecifier.parent.value.source.value;
 
-// if (!exportsNames.has(filePath) && !proxyExports.has(filePath)) {
+// if (!exportsNames.has(filePath) && !proxyDefaultExports.has(filePath)) {
 //   return;
 // }
 
@@ -292,20 +403,20 @@ const transform = (
     preservedDefaultExportsArr,
     _extensions,
     exportsNamesArr,
-    proxyExportsArr,
+    proxyDefaultExportsArr,
     defaultImportsArr,
   }: {
     defaultImportsArr: DefaultImportsArr;
     exportsNamesArr: ExportsNamesArr;
-    proxyExportsArr: ProxyExportsArr;
+    proxyDefaultExportsArr: ProxyDefaultExportsArr;
     preservedDefaultExportsArr: string[];
     _extensions: string[];
   },
 ) => {
   const j = api.jscodeshift;
   const exportsNames = new Map(exportsNamesArr);
-  const proxyExports = new Map(proxyExportsArr);
-  const defaultImports = new Map(defaultImportsArr.map((item) => [item[0], new Set(item[1])]));
+  const proxyDefaultExports = new Map(proxyDefaultExportsArr);
+  const defaultImports = convertFromJsonToMapSet(defaultImportsArr);
   const preservedDefaultExports: PreservedDefaultExports = new Set(preservedDefaultExportsArr);
 
   debugLog('transform start', {
@@ -313,6 +424,7 @@ const transform = (
   });
 
   const collection = j(fileInfo.source);
+  const originalCollection = j(fileInfo.source);
 
   transformExport({
     collection,
@@ -320,16 +432,20 @@ const transform = (
     preservedDefaultExports,
     exportsNames,
     filePath: fileInfo.path,
-    proxyExports,
+    proxyDefaultExports,
+    defaultImports,
+    _extensions,
   });
 
-  transformImport({
+  transformImportAndUsage({
     collection,
     j,
     exportsNames,
     filePath: fileInfo.path,
     defaultImports,
     _extensions,
+    proxyDefaultExports,
+    originalCollection,
   });
 
   // transformDefaultUsage({

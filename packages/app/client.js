@@ -2,14 +2,14 @@ import { createRoot } from 'react-dom/client';
 
 import { Root } from './Root';
 import Num from '@ui/kit/Button/Button';
-import * as allConst from './const';
+import * as allConst from './test-te-const';
 
 console.log(allConst.default);
 
 export const clientRun = () => {
   const content = document.getElementById('content');
-  // const s = import('./const');
-  const s1 = import('https://google.com');
+  const s = import('./dynamicModule');
+  // const s1 = import('https://google.com');
 
   const t = 'test-test-test';
   const test = allConst.default;

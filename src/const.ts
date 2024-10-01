@@ -66,6 +66,8 @@ export const reservedWords = [
 ];
 
 export const defaultImportsFileName = 'dump/defaultImports.json';
-export const proxyExportsFileName = 'dump/proxyExports.json';
+export const proxyExportsFileName = 'dump/proxyDefaultExports.json';
 export const exportsNamesFileName = 'dump/exportsNames.json';
 export const preservedDefaultExportsFileName = 'dump/preservedDefaultExports.json';
+
+export const visitedFilePaths = new Set<string>();
