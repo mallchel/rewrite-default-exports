@@ -5,7 +5,7 @@
 </p>
 
 # rewrite-default-exports
-Rewrite your default exports to named ones and replace old names everywhere
+It is codemod to rewrite your default exports to named ones and replace old names everywhere
 
 ## Motivation
 One day you might think about using named import and named export instead of default import and default export because it is a well-known best practice. After that you can add eslint rule for prohibiting export default in your code base with [eslint/no-default-export](https://github.com/import-js/eslint-plugin-import/blob/main/docs/rules/no-default-export.md) or [biomejs/no-default-export](https://biomejs.dev/linter/rules/no-default-export/).
