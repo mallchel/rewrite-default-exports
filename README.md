@@ -14,7 +14,12 @@ It is divided into two stages:
 
 It uses jscodeshift (with babel inside) to transform files and the `resolve` package to resolve all imports. It will collect all relations between files and will transform all default imports and exports to named exports.
 
-## How to run and see result
+## How to use it
+1. Go to your product
+2. `IS_GATHER_INFO=true ENTRY="./path/to/your/entry.js" npx rewrite-default-exports`
+3. `IS_TRANSFORM=true ENTRY="./path/to/your/entry.js" npx rewrite-default-exports`
+
+## How to run and see the result as an example
 1. download this repo
 2. run `yarn`
 3. add `.env` file to the root with:
