@@ -22,7 +22,7 @@ export const Root = ({
   isConstructorOnPhone,
   isConstructorLoaded,
 }) => {
-  console.log('render', all.default, import('./components/Make-Payment-Provider'));
+  console.log('render', all.default, import('./components/MakePaymentProvider'));
 
   return (
     <ApplicationProvider>

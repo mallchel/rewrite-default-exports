@@ -26,7 +26,7 @@ import type {
 } from './types';
 
 export const debugLog = (...args: any[]) => {
-  if (process.env.DEBUG_APP) {
+  if (process.env.DEBUG_APP === 'true') {
     console.log(...args);
   }
 };
