@@ -129,8 +129,6 @@ export const runTransform = async () => {
   );
 };
 
-console.log('! process.env.IS_GATHER_INFO', process.env.IS_GATHER_INFO);
-
 if (process.env.IS_GATHER_INFO === 'true') {
   runGatherInfo();
 }

@@ -7,7 +7,6 @@ import j, {
   type ExportSpecifier,
   type Identifier,
   type ImportDeclaration,
-  // type JSCodeshift,
   type Literal,
 } from 'jscodeshift';
 
@@ -23,7 +22,6 @@ import {
   tap,
   iterateByExportDefaultDeclaration,
   gatherLocalImportPaths,
-  map,
   gatherDefaultImports,
   makeIterateBySourcesNSpecifiers,
   getIsExportedDefaultSpecifier,
@@ -39,7 +37,6 @@ import type {
   Specifier,
   IterateBySourcesNSpecifiersFn,
   IterateByPathsArgs,
-  // IterateBySpecifierArgs,
   LocalDefaultImports,
 } from './types';
 import { visitedFilePaths } from './const';

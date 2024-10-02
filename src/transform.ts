@@ -65,9 +65,6 @@ export const transformExport = ({
   let nameInsteadOfDefaultIdentifier = nameInsteadOfDefault
     ? j.identifier(nameInsteadOfDefault)
     : undefined;
-  // When we have no targetFilePath in exportsNames
-  // it means our import was "named"
-  const shouldUseImportSpecifier = isProxyFile && !nameInsteadOfDefault;
 
   iterateByExportDefaultDeclaration({
     callbacks: [
@@ -271,7 +268,6 @@ export const transformImportAndUsage = ({
   defaultImports,
   _extensions,
   proxyDefaultExports,
-  originalCollection,
 }: {
   collection: Collection;
   j: JSCodeshift;
@@ -280,7 +276,6 @@ export const transformImportAndUsage = ({
   defaultImports: DefaultImports;
   _extensions: string[];
   proxyDefaultExports: ProxyDefaultExports;
-  originalCollection: Collection;
 }) => {
   const defaultImportPaths = defaultImports.get(filePath);
 
@@ -445,7 +440,6 @@ const transform = (
     defaultImports,
     _extensions,
     proxyDefaultExports,
-    originalCollection,
   });
 
   // transformDefaultUsage({
