@@ -53,5 +53,5 @@ IS_TRANSFORM=true
 
 
 ### Links
-[jscodeshift](https://github.com/facebook/jscodeshift/wiki/jscodeshift-Documentation)
-[astexplorer](https://astexplorer.net/)
+- [jscodeshift](https://github.com/facebook/jscodeshift/wiki/jscodeshift-Documentation)
+- [astexplorer](https://astexplorer.net/)
