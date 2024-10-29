@@ -68,7 +68,7 @@ IS_TRANSFORM=true
 1. `namespace.default` usage
    this won't be transformed yet:
    ```ts
-   import * as allConst from './test-te-const';
+   import * as allConst from './const';
    console.log(allConst.default);
    ```
 2. Conflicts in proxy files:
