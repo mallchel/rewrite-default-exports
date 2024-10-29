@@ -4,7 +4,6 @@ import j, {
   type ExportDefaultDeclaration,
   type ExportNamedDeclaration,
   type ExportSpecifier,
-  type ImportSpecifier,
   type JSCodeshift,
 } from 'jscodeshift';
 import { Type } from 'ast-types/lib/types';

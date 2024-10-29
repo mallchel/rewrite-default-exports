@@ -419,7 +419,6 @@ const transform = (
   });
 
   const collection = j(fileInfo.source);
-  const originalCollection = j(fileInfo.source);
 
   transformExport({
     collection,
